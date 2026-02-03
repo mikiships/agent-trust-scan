@@ -1,0 +1,104 @@
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
+
+/**
+ * Check if an IP address is in a private or reserved range
+ */
+export function isPrivateOrReservedIP(ip: string): boolean {
+  const ipType = isIP(ip);
+  
+  if (ipType === 4) {
+    // IPv4 private/reserved ranges
+    const parts = ip.split('.').map(Number);
+    
+    // 10.0.0.0/8
+    if (parts[0] === 10) return true;
+    
+    // 172.16.0.0/12
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    
+    // 192.168.0.0/16
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    
+    // 127.0.0.0/8 (loopback)
+    if (parts[0] === 127) return true;
+    
+    // 169.254.0.0/16 (link-local)
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    
+    // 0.0.0.0/8
+    if (parts[0] === 0) return true;
+    
+    // 255.255.255.255/32 (broadcast)
+    if (parts[0] === 255 && parts[1] === 255 && parts[2] === 255 && parts[3] === 255) return true;
+    
+    return false;
+  } else if (ipType === 6) {
+    // IPv6 private/reserved ranges
+    const lower = ip.toLowerCase();
+    
+    // ::1 (loopback)
+    if (lower === '::1' || lower === '0:0:0:0:0:0:0:1') return true;
+    
+    // fc00::/7 (unique local)
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+    
+    // fe80::/10 (link-local)
+    if (lower.startsWith('fe8') || lower.startsWith('fe9') || 
+        lower.startsWith('fea') || lower.startsWith('feb')) return true;
+    
+    // ::ffff:0:0/96 (IPv4-mapped IPv6)
+    if (lower.includes('::ffff:')) return true;
+    
+    return false;
+  }
+  
+  return false;
+}
+
+/**
+ * Validate that a domain is safe to scan (not private/reserved IP)
+ * Resolves DNS first, then checks all resolved IPs
+ */
+export async function validateDomain(domain: string): Promise<{ valid: boolean; reason?: string }> {
+  // Check if domain contains userinfo (user:pass@)
+  if (domain.includes('@')) {
+    return { valid: false, reason: 'Domain contains userinfo (user:pass@host)' };
+  }
+  
+  // Extract hostname (remove port if present)
+  const hostname = domain.split(':')[0];
+  
+  // Check if it's already an IP address
+  const ipType = isIP(hostname);
+  if (ipType !== 0) {
+    if (isPrivateOrReservedIP(hostname)) {
+      return { valid: false, reason: `Private or reserved IP address: ${hostname}` };
+    }
+    return { valid: true };
+  }
+  
+  // Check for localhost variants
+  if (hostname.toLowerCase() === 'localhost') {
+    return { valid: false, reason: 'localhost is not allowed' };
+  }
+  
+  // Resolve DNS to get IP addresses
+  try {
+    const addresses = await lookup(hostname, { all: true });
+    
+    for (const { address } of addresses) {
+      if (isPrivateOrReservedIP(address)) {
+        return { 
+          valid: false, 
+          reason: `Domain ${hostname} resolves to private/reserved IP: ${address}` 
+        };
+      }
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    // DNS resolution failure - let it proceed, network error will be caught later
+    return { valid: true };
+  }
+}

@@ -33,6 +33,20 @@ export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
 
     const contentType = response.headers.get('content-type');
     if (!contentType?.includes('application/json')) {
+      // If we get HTML at this path, it's likely a SPA catch-all (not found)
+      // Treat as warn (not found) rather than fail (broken)
+      if (contentType?.includes('text/html')) {
+        return {
+          status: 'warn',
+          details: {
+            exists: false,
+            url,
+            message: 'A2A Agent Card not found (SPA catch-all returned HTML)',
+          },
+        };
+      }
+      
+      // Other non-JSON content-types are actual failures
       return {
         status: 'fail',
         details: {

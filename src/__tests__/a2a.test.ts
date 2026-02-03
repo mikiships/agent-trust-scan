@@ -53,4 +53,17 @@ describe('A2A Agent Card Scanner', () => {
     expect(result.status).toBe('fail');
     expect(result.details.schemaValid).toBe(false);
   });
+
+  it('should return warn status for SPA catch-all returning HTML', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: (name: string) => name === 'content-type' ? 'text/html; charset=utf-8' : null },
+    });
+
+    const result = await scanA2AAgentCard('example.com');
+    expect(result.status).toBe('warn');
+    expect(result.details.exists).toBe(false);
+    expect(result.details.message).toContain('SPA catch-all');
+  });
 });

@@ -6,6 +6,8 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
   // MCP servers typically expose metadata at /.well-known/mcp.json or /mcp.json
   const paths = ['/.well-known/mcp.json', '/mcp.json'];
   
+  let lastSchemaError: CheckResult | null = null;
+  
   for (const path of paths) {
     const url = buildUrl(domain, path);
     
@@ -27,7 +29,8 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
       const result = MCPServerSchema.safeParse(data);
       
       if (!result.success) {
-        return {
+        // Save schema error but try next path
+        lastSchemaError = {
           status: 'warn',
           details: {
             mcpDetected: true,
@@ -40,6 +43,7 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
             message: 'MCP metadata found but schema validation failed',
           },
         };
+        continue;
       }
 
       const server = result.data;
@@ -61,6 +65,11 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
       // Continue to next path
       continue;
     }
+  }
+
+  // If we found MCP metadata with schema errors, return that
+  if (lastSchemaError) {
+    return lastSchemaError;
   }
 
   // No MCP endpoint found

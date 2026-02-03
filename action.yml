@@ -45,9 +45,21 @@ runs:
       with:
         node-version: '18'
     
-    - name: Install agent-trust-scan
+    - name: Check dependencies
       shell: bash
-      run: npm install -g @agent-trust/scan
+      run: |
+        if ! command -v jq &> /dev/null; then
+          echo "Error: jq is required but not installed"
+          exit 1
+        fi
+    
+    - name: Build agent-trust-scan
+      shell: bash
+      run: |
+        # Use the local checkout instead of installing from npm
+        cd $GITHUB_ACTION_PATH
+        npm ci
+        npm run build
     
     - name: Run scan
       id: scan
@@ -56,19 +68,36 @@ runs:
         DOMAINS: ${{ inputs.domains }}
         FORMAT: ${{ inputs.format }}
         FAIL_ON: ${{ inputs.fail-on }}
+        POST_COMMENT: ${{ inputs.post-comment }}
       run: |
+        # Use local build instead of global install
+        SCAN_BIN="node $GITHUB_ACTION_PATH/dist/cli.js"
+        
         # Determine if domains is a file or comma-separated list
         if [ -f "$DOMAINS" ]; then
-          SCAN_CMD="agent-trust-scan --domains $DOMAINS --format json"
+          DOMAINS_ARG="--domains $DOMAINS"
         else
           # Convert comma-separated to newline-separated
           DOMAINS_FILE=$(mktemp)
           echo "$DOMAINS" | tr ',' '\n' > "$DOMAINS_FILE"
-          SCAN_CMD="agent-trust-scan --domains $DOMAINS_FILE --format json"
+          DOMAINS_ARG="--domains $DOMAINS_FILE"
         fi
         
-        # Run scan and capture output
-        REPORT_JSON=$($SCAN_CMD) || EXIT_CODE=$?
+        # Run scan and capture output (allow failure for now)
+        set +e
+        REPORT_JSON=$($SCAN_BIN $DOMAINS_ARG --format json)
+        EXIT_CODE=$?
+        set -e
+        
+        # Check if scan output is empty
+        if [ -z "$REPORT_JSON" ]; then
+          echo "Error: Scan produced no output (exit code: $EXIT_CODE)"
+          echo "score=0" >> $GITHUB_OUTPUT
+          echo "passed=false" >> $GITHUB_OUTPUT
+          echo "report={}" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
         echo "$REPORT_JSON" > scan-report.json
         
         # Extract score (handle both single domain and multi-domain)
@@ -95,9 +124,9 @@ runs:
         echo "$REPORT_JSON" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
         
-        # Generate formatted output
-        if [ "$FORMAT" = "markdown" ]; then
-          agent-trust-scan --domains ${DOMAINS_FILE:-$DOMAINS} --format markdown > scan-report.md
+        # Generate markdown report if post-comment is true OR format is markdown
+        if [ "$POST_COMMENT" = "true" ] || [ "$FORMAT" = "markdown" ]; then
+          $SCAN_BIN $DOMAINS_ARG --format markdown > scan-report.md
           echo "markdown-report<<EOF" >> $GITHUB_OUTPUT
           cat scan-report.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT

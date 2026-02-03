@@ -18,6 +18,7 @@ program
   .option('-d, --domains <file>', 'File containing list of domains (one per line)')
   .option('-f, --format <format>', 'Output format: table|json|markdown', 'table')
   .option('-j, --json', 'Output JSON format (shorthand for --format json)')
+  .option('-v, --verbose', 'Show detailed progress and URLs being fetched')
   .action(async (domain: string | undefined, options: any) => {
     try {
       const format = options.json ? 'json' : options.format;
@@ -39,7 +40,7 @@ program
           .filter(line => line && !line.startsWith('#'));
       } else {
         console.error('Error: Must provide either a domain or --domains file');
-        program.help();
+        console.error('Run "agent-trust-scan --help" for usage information');
         process.exit(1);
       }
 
@@ -48,18 +49,40 @@ program
         process.exit(1);
       }
 
-      // Scan all domains
+      // Scan all domains in parallel with concurrency limit
+      const CONCURRENCY = 5;
       const reports: ScanReport[] = [];
       let hasFailures = false;
 
-      for (const d of domains) {
-        const report = await scanDomain(d);
-        reports.push(report);
+      // Process domains in batches
+      for (let i = 0; i < domains.length; i += CONCURRENCY) {
+        const batch = domains.slice(i, i + CONCURRENCY);
+        
+        if (options.verbose) {
+          console.error(`Scanning batch: ${batch.join(', ')}`);
+        }
+        
+        const batchResults = await Promise.all(
+          batch.map(async (d) => {
+            if (options.verbose) {
+              console.error(`Starting scan: ${d}`);
+            }
+            const report = await scanDomain(d);
+            if (options.verbose) {
+              console.error(`Completed scan: ${d} (score: ${report.score})`);
+            }
+            return report;
+          })
+        );
+        
+        reports.push(...batchResults);
         
         // Check for failures
-        const failures = Object.values(report.checks).filter(c => c.status === 'fail');
-        if (failures.length > 0) {
-          hasFailures = true;
+        for (const report of batchResults) {
+          const failures = Object.values(report.checks).filter(c => c.status === 'fail');
+          if (failures.length > 0) {
+            hasFailures = true;
+          }
         }
       }
 

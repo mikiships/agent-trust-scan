@@ -3,10 +3,17 @@ import { scanLlmsTxt } from './scanners/llms-txt.js';
 import { scanHealth } from './scanners/health.js';
 import { scanMCP } from './scanners/mcp.js';
 import { calculateScore, normalizeUrl } from './utils.js';
+import { validateDomain } from './security.js';
 import type { ScanReport } from './types.js';
 
 export async function scanDomain(domain: string): Promise<ScanReport> {
   const normalized = normalizeUrl(domain);
+  
+  // Validate domain is not private/reserved IP
+  const validation = await validateDomain(normalized);
+  if (!validation.valid) {
+    throw new Error(`Invalid domain: ${validation.reason}`);
+  }
   
   // Run all scans in parallel
   const [a2aResult, llmsTxtResult, healthResult, mcpResult] = await Promise.all([
