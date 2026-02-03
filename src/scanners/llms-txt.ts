@@ -1,4 +1,4 @@
-import { buildUrl, safeFetch } from '../utils.js';
+import { buildUrl, safeFetch, readResponseText } from '../utils.js';
 import type { CheckResult } from '../types.js';
 import { URL } from 'url';
 
@@ -130,7 +130,7 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
       };
     }
 
-    const content = await response.text();
+    const content = await readResponseText(response);
     const parsed = parseLlmsTxt(content);
     
     if (!parsed.valid) {

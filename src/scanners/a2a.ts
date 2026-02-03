@@ -1,5 +1,5 @@
 import { A2AAgentCardSchema } from '../types.js';
-import { buildUrl, safeFetch } from '../utils.js';
+import { buildUrl, safeFetch, readResponseJson } from '../utils.js';
 import type { CheckResult } from '../types.js';
 
 export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
@@ -58,7 +58,7 @@ export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
       };
     }
 
-    const data = await response.json();
+    const data = await readResponseJson(response);
     
     // Validate schema
     const result = A2AAgentCardSchema.safeParse(data);

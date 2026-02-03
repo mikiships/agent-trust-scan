@@ -1,5 +1,5 @@
 import { MCPServerSchema } from '../types.js';
-import { buildUrl, safeFetch } from '../utils.js';
+import { buildUrl, safeFetch, readResponseJson } from '../utils.js';
 import type { CheckResult } from '../types.js';
 
 export async function scanMCP(domain: string): Promise<CheckResult> {
@@ -23,7 +23,7 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
         continue; // Try next path
       }
 
-      const data = await response.json();
+      const data = await readResponseJson(response);
       
       // Validate schema
       const result = MCPServerSchema.safeParse(data);

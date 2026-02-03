@@ -26,12 +26,16 @@ describe('llms.txt Scanner', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
+      headers: { get: () => null },
       text: async () => `# Example Site\n\n> Description\n\n## Docs\n- [API](https://example.com/api)\n`,
     });
     // Mock link check
-    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, headers: { get: () => null } });
 
     const result = await scanLlmsTxt('example.com');
+    if (result.status !== 'pass') {
+      console.error('Result:', JSON.stringify(result, null, 2));
+    }
     expect(result.status).toBe('pass');
     expect(result.details.formatValid).toBe(true);
   });
@@ -40,10 +44,14 @@ describe('llms.txt Scanner', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
+      headers: { get: () => null },
       text: async () => `This has no title heading\nJust plain text`,
     });
 
     const result = await scanLlmsTxt('example.com');
+    if (result.status !== 'fail' || result.details.formatValid !== false) {
+      console.error('Result:', JSON.stringify(result, null, 2));
+    }
     expect(result.status).toBe('fail');
     expect(result.details.formatValid).toBe(false);
   });

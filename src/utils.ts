@@ -1,3 +1,86 @@
+/**
+ * Maximum response body size in bytes (256KB)
+ * Prevents memory exhaustion from malicious responses
+ */
+const MAX_RESPONSE_SIZE = 256 * 1024;
+
+/**
+ * Read response text with size limit
+ * @throws Error if response exceeds MAX_RESPONSE_SIZE
+ */
+export async function readResponseText(response: Response): Promise<string> {
+  const contentLength = response.headers.get('Content-Length');
+  if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_SIZE) {
+    throw new Error(`Response too large: ${contentLength} bytes (max: ${MAX_RESPONSE_SIZE})`);
+  }
+  
+  // Try to use streaming if available (real fetch responses)
+  const reader = response.body?.getReader();
+  if (reader) {
+    const chunks: Uint8Array[] = [];
+    let totalSize = 0;
+    
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        totalSize += value.length;
+        if (totalSize > MAX_RESPONSE_SIZE) {
+          throw new Error(`Response exceeded size limit: ${totalSize} bytes (max: ${MAX_RESPONSE_SIZE})`);
+        }
+        
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    
+    // Combine chunks and decode
+    const combined = new Uint8Array(totalSize);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    return new TextDecoder().decode(combined);
+  }
+  
+  // Fallback to response.text() for mocked responses (in tests)
+  // This still provides basic size protection via Content-Length check above
+  const text = await response.text();
+  if (text.length > MAX_RESPONSE_SIZE) {
+    throw new Error(`Response exceeded size limit: ${text.length} bytes (max: ${MAX_RESPONSE_SIZE})`);
+  }
+  return text;
+}
+
+/**
+ * Read response JSON with size limit
+ * @throws Error if response exceeds MAX_RESPONSE_SIZE or is invalid JSON
+ */
+export async function readResponseJson<T = any>(response: Response): Promise<T> {
+  // For mocked responses with json() method, use it directly
+  if (typeof (response as any).json === 'function' && !response.body) {
+    const data = await response.json() as T;
+    // Still check size constraint on stringified JSON
+    const stringified = JSON.stringify(data);
+    if (stringified.length > MAX_RESPONSE_SIZE) {
+      throw new Error(`Response exceeded size limit: ${stringified.length} bytes (max: ${MAX_RESPONSE_SIZE})`);
+    }
+    return data;
+  }
+  
+  // For real responses, use streaming text reader then parse
+  const text = await readResponseText(response);
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`Invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 export async function fetchWithTimeout(
   url: string,
   timeoutMs: number = 10000
@@ -24,6 +107,13 @@ export async function fetchWithTimeout(
 /**
  * Safe fetch wrapper that validates redirect targets against private/reserved IPs
  * Follows redirects manually after validating each Location header
+ * 
+ * DNS rebinding protection: Re-validates DNS for EVERY request (including after redirects)
+ * to prevent TOCTOU attacks where a domain resolves to different IPs between validation and fetch.
+ * 
+ * @param url - URL to fetch
+ * @param timeoutMs - Request timeout in milliseconds
+ * @param maxRedirects - Maximum number of redirects to follow
  */
 export async function safeFetch(
   url: string,
@@ -96,7 +186,22 @@ export function normalizeUrl(domain: string): string {
   domain = domain.replace(/\/$/, '');
   // Remove path if present
   domain = domain.split('/')[0];
-  return domain;
+  
+  // Check for userinfo BEFORE parsing (@ should not be in domain)
+  if (domain.includes('@')) {
+    // Return as-is so validateDomain can reject it properly
+    return domain;
+  }
+  
+  // Parse to validate and normalize (handles IPv6 brackets)
+  try {
+    const url = new URL(`https://${domain}`);
+    // Return host (hostname + port), which preserves IPv6 brackets and ports
+    return url.host;
+  } catch {
+    // If parsing fails, return as-is (will be caught by validateDomain)
+    return domain;
+  }
 }
 
 export function buildUrl(domain: string, path: string): string {
