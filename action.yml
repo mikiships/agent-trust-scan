@@ -1,0 +1,131 @@
+name: 'Agent Trust Scan'
+description: 'Validate agent/tool endpoints across A2A, MCP, and llms.txt protocols'
+author: 'Agent Trust'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  domains:
+    description: 'Comma-separated list of domains to scan, or path to file with domains'
+    required: true
+  fail-on:
+    description: 'Fail the action on: warn|fail (default: fail)'
+    required: false
+    default: 'fail'
+  format:
+    description: 'Output format: table|json|markdown (default: markdown)'
+    required: false
+    default: 'markdown'
+  post-comment:
+    description: 'Post results as PR comment (requires github-token)'
+    required: false
+    default: 'false'
+  github-token:
+    description: 'GitHub token for posting PR comments (use ${{ secrets.GITHUB_TOKEN }})'
+    required: false
+
+outputs:
+  score:
+    description: 'Overall scan score (0-100)'
+    value: ${{ steps.scan.outputs.score }}
+  passed:
+    description: 'Whether all checks passed'
+    value: ${{ steps.scan.outputs.passed }}
+  report:
+    description: 'Full scan report (JSON)'
+    value: ${{ steps.scan.outputs.report }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install agent-trust-scan
+      shell: bash
+      run: npm install -g @agent-trust/scan
+    
+    - name: Run scan
+      id: scan
+      shell: bash
+      env:
+        DOMAINS: ${{ inputs.domains }}
+        FORMAT: ${{ inputs.format }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        # Determine if domains is a file or comma-separated list
+        if [ -f "$DOMAINS" ]; then
+          SCAN_CMD="agent-trust-scan --domains $DOMAINS --format json"
+        else
+          # Convert comma-separated to newline-separated
+          DOMAINS_FILE=$(mktemp)
+          echo "$DOMAINS" | tr ',' '\n' > "$DOMAINS_FILE"
+          SCAN_CMD="agent-trust-scan --domains $DOMAINS_FILE --format json"
+        fi
+        
+        # Run scan and capture output
+        REPORT_JSON=$($SCAN_CMD) || EXIT_CODE=$?
+        echo "$REPORT_JSON" > scan-report.json
+        
+        # Extract score (handle both single domain and multi-domain)
+        SCORE=$(echo "$REPORT_JSON" | jq -r 'if type == "array" then .[0].score else .score end')
+        echo "score=$SCORE" >> $GITHUB_OUTPUT
+        
+        # Check if all passed
+        FAIL_COUNT=$(echo "$REPORT_JSON" | jq -r '
+          if type == "array" then 
+            [.[] | .checks | to_entries[] | select(.value.status == "fail")] | length
+          else 
+            [.checks | to_entries[] | select(.value.status == "fail")] | length
+          end
+        ')
+        WARN_COUNT=$(echo "$REPORT_JSON" | jq -r '
+          if type == "array" then 
+            [.[] | .checks | to_entries[] | select(.value.status == "warn")] | length
+          else 
+            [.checks | to_entries[] | select(.value.status == "warn")] | length
+          end
+        ')
+        
+        echo "report<<EOF" >> $GITHUB_OUTPUT
+        echo "$REPORT_JSON" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # Generate formatted output
+        if [ "$FORMAT" = "markdown" ]; then
+          agent-trust-scan --domains ${DOMAINS_FILE:-$DOMAINS} --format markdown > scan-report.md
+          echo "markdown-report<<EOF" >> $GITHUB_OUTPUT
+          cat scan-report.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+        
+        # Determine pass/fail
+        if [ "$FAIL_ON" = "warn" ] && [ "$WARN_COUNT" -gt 0 ]; then
+          echo "passed=false" >> $GITHUB_OUTPUT
+          exit 1
+        elif [ "$FAIL_COUNT" -gt 0 ]; then
+          echo "passed=false" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "passed=true" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Post PR comment
+      if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('scan-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔍 Agent Trust Scan Results\n\n${report}`
+          });

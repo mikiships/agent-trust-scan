@@ -1,0 +1,20 @@
+# Source files (only ship dist/)
+src/
+tsconfig.json
+jest.config.js
+
+# Tests
+**/__tests__/
+*.test.ts
+
+# Development
+.github/
+.vscode/
+.idea/
+
+# Documentation (keep README, LICENSE)
+docs/
+
+# Config
+.gitignore
+.npmignore
