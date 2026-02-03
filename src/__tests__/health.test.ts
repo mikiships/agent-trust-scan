@@ -5,6 +5,13 @@ global.fetch = mockFetch;
 
 import { scanHealth } from '../scanners/health.js';
 
+// TODO (test determinism): Currently uses real TLS connections via tls.connect()
+// which makes tests non-deterministic and environment-dependent. Consider:
+// - Mock tls.connect() for unit tests
+// - Mock dns.lookup() to avoid real DNS
+// - Keep integration tests behind --runIntegrationTests flag
+// - Use dependency injection for tls/dns modules
+
 describe('Health Scanner', () => {
   beforeEach(() => {
     jest.clearAllMocks();

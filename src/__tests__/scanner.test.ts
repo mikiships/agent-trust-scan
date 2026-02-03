@@ -5,6 +5,10 @@ global.fetch = mockFetch;
 
 import { scanDomain } from '../scanner.js';
 
+// TODO (test determinism): validateDomain() does real DNS lookups,
+// making tests dependent on network connectivity. Consider mocking
+// dns.lookup() or using dependency injection.
+
 describe('Domain Scanner', () => {
   beforeEach(() => {
     jest.clearAllMocks();

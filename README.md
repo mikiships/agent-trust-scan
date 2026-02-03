@@ -198,6 +198,20 @@ This tool makes HTTP requests to the provided domains to check for:
 
 **No sensitive data is collected or transmitted.** All checks are read-only.
 
+### Security Protections
+
+- ✅ **SSRF Prevention**: Blocks requests to private/reserved IPs (RFC1918, link-local, loopback)
+- ✅ **DNS Rebinding Protection**: Re-validates DNS on every request to prevent TOCTOU attacks
+- ✅ **Redirect Validation**: Manually handles redirects and validates each hop
+- ✅ **Response Size Limits**: Enforces 256KB max response size to prevent memory exhaustion
+- ✅ **Protocol Restrictions**: Only allows HTTPS (or HTTP with explicit opt-in)
+
+### Security Limitations (v0.1.0)
+
+**Port Scanning**: By default, arbitrary ports are allowed (e.g., `example.com:8443`). In untrusted contexts (e.g., PR builds with domains from repo files), this could be abused for port scanning. **Mitigation**: Restrict domain inputs to trusted sources, or use `--allow-ports 443` in future versions.
+
+For security issues, please see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

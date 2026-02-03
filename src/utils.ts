@@ -209,6 +209,16 @@ export function buildUrl(domain: string, path: string): string {
   return `https://${normalized}${path}`;
 }
 
+/**
+ * Calculate overall score from check results
+ * 
+ * TODO (v0.2.0): Improve scoring model:
+ * - Add weighted checks (health/A2A more important than optional MCP)
+ * - Consider check severity (missing A2A vs 1 broken link)
+ * - Treat optional checks (MCP) as N/A instead of penalizing absence
+ * - Add completeness metrics (A2A field completeness, link health ratio)
+ * - Support configurable scoring policies
+ */
 export function calculateScore(checks: Record<string, { status: string }>): number {
   const statuses = Object.values(checks).map(c => c.status);
   const passCount = statuses.filter(s => s === 'pass').length;

@@ -59,6 +59,10 @@ export function isPrivateOrReservedIP(ip: string): boolean {
 /**
  * Validate that a domain is safe to scan (not private/reserved IP)
  * Resolves DNS first, then checks all resolved IPs
+ * 
+ * NOTE: This validation is called once at scan start. DNS rebinding attacks
+ * (where DNS changes between validation and fetch) are mitigated by safeFetch(),
+ * which re-validates DNS on every request including redirects.
  */
 export async function validateDomain(domain: string): Promise<{ valid: boolean; reason?: string }> {
   // Reject inputs containing URL special characters that could bypass validation
