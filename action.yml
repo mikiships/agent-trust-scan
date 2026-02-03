@@ -45,14 +45,6 @@ runs:
       with:
         node-version: '18'
     
-    - name: Check dependencies
-      shell: bash
-      run: |
-        if ! command -v jq &> /dev/null; then
-          echo "Error: jq is required but not installed"
-          exit 1
-        fi
-    
     - name: Build agent-trust-scan
       shell: bash
       run: |
@@ -63,6 +55,7 @@ runs:
     
     - name: Run scan
       id: scan
+      continue-on-error: true
       shell: bash
       env:
         DOMAINS: ${{ inputs.domains }}
@@ -83,53 +76,60 @@ runs:
           DOMAINS_ARG="--domains $DOMAINS_FILE"
         fi
         
-        # Run scan and capture output (allow failure for now)
+        # Run scan with user's requested format for console output
+        echo "Running scan with format: $FORMAT"
         set +e
-        REPORT_JSON=$($SCAN_BIN $DOMAINS_ARG --format json)
-        EXIT_CODE=$?
+        $SCAN_BIN $DOMAINS_ARG --format "$FORMAT"
+        SCAN_EXIT_CODE=$?
         set -e
         
-        # Check if scan output is empty
-        if [ -z "$REPORT_JSON" ]; then
-          echo "Error: Scan produced no output (exit code: $EXIT_CODE)"
-          echo "score=0" >> $GITHUB_OUTPUT
-          echo "passed=false" >> $GITHUB_OUTPUT
-          echo "report={}" >> $GITHUB_OUTPUT
-          exit 1
-        fi
+        # Also capture JSON for machine parsing
+        $SCAN_BIN $DOMAINS_ARG --format json > scan-report.json
         
-        echo "$REPORT_JSON" > scan-report.json
+        # Parse JSON using Node.js (no jq dependency)
+        cat > parse-report.js << 'PARSER_EOF'
+        const fs = require('fs');
+        const data = JSON.parse(fs.readFileSync('scan-report.json', 'utf8'));
         
-        # Extract score (handle both single domain and multi-domain)
-        SCORE=$(echo "$REPORT_JSON" | jq -r 'if type == "array" then .[0].score else .score end')
+        // Handle both single domain and array of domains
+        const reports = Array.isArray(data) ? data : [data];
+        
+        // Compute minimum score across all domains (best for gating)
+        const minScore = Math.min(...reports.map(r => r.score));
+        console.log(`SCORE=${minScore}`);
+        
+        // Count failures and warnings across all domains
+        let totalFails = 0;
+        let totalWarns = 0;
+        
+        for (const report of reports) {
+          const checks = Object.values(report.checks);
+          totalFails += checks.filter(c => c.status === 'fail').length;
+          totalWarns += checks.filter(c => c.status === 'warn').length;
+        }
+        
+        console.log(`FAIL_COUNT=${totalFails}`);
+        console.log(`WARN_COUNT=${totalWarns}`);
+        PARSER_EOF
+        
+        # Run parser and capture output
+        PARSE_OUTPUT=$(node parse-report.js)
+        
+        # Extract values
+        SCORE=$(echo "$PARSE_OUTPUT" | grep "^SCORE=" | cut -d= -f2)
+        FAIL_COUNT=$(echo "$PARSE_OUTPUT" | grep "^FAIL_COUNT=" | cut -d= -f2)
+        WARN_COUNT=$(echo "$PARSE_OUTPUT" | grep "^WARN_COUNT=" | cut -d= -f2)
+        
         echo "score=$SCORE" >> $GITHUB_OUTPUT
         
-        # Check if all passed
-        FAIL_COUNT=$(echo "$REPORT_JSON" | jq -r '
-          if type == "array" then 
-            [.[] | .checks | to_entries[] | select(.value.status == "fail")] | length
-          else 
-            [.checks | to_entries[] | select(.value.status == "fail")] | length
-          end
-        ')
-        WARN_COUNT=$(echo "$REPORT_JSON" | jq -r '
-          if type == "array" then 
-            [.[] | .checks | to_entries[] | select(.value.status == "warn")] | length
-          else 
-            [.checks | to_entries[] | select(.value.status == "warn")] | length
-          end
-        ')
-        
+        # Save full JSON report
         echo "report<<EOF" >> $GITHUB_OUTPUT
-        echo "$REPORT_JSON" >> $GITHUB_OUTPUT
+        cat scan-report.json >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
         
-        # Generate markdown report if post-comment is true OR format is markdown
-        if [ "$POST_COMMENT" = "true" ] || [ "$FORMAT" = "markdown" ]; then
+        # Generate markdown report for PR comments
+        if [ "$POST_COMMENT" = "true" ]; then
           $SCAN_BIN $DOMAINS_ARG --format markdown > scan-report.md
-          echo "markdown-report<<EOF" >> $GITHUB_OUTPUT
-          cat scan-report.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
         fi
         
         # Determine pass/fail
@@ -144,7 +144,7 @@ runs:
         fi
     
     - name: Post PR comment
-      if: inputs.post-comment == 'true' && github.event_name == 'pull_request'
+      if: always() && inputs.post-comment == 'true' && github.event_name == 'pull_request'
       uses: actions/github-script@v7
       with:
         github-token: ${{ inputs.github-token }}
