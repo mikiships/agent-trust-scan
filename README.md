@@ -42,7 +42,7 @@ agent-trust-scan example.com
 ```
 Scan Report: example.com
 Timestamp: 2026-02-03T19:00:00Z
-Score: 85/100
+Score: 75/100
 
 ✓ A2A Agent Card: PASS
   Name: Example Agent

@@ -1,4 +1,4 @@
-import { buildUrl, fetchWithTimeout } from '../utils.js';
+import { buildUrl, safeFetch } from '../utils.js';
 import type { CheckResult } from '../types.js';
 import * as tls from 'tls';
 import { URL } from 'url';
@@ -10,12 +10,15 @@ interface TLSInfo {
   error?: string;
 }
 
-async function checkTLS(domain: string): Promise<TLSInfo> {
+async function checkTLS(domain: string, port: number = 443): Promise<TLSInfo> {
+  // For TLS check, use the hostname without port for servername
+  const hostname = domain.split(':')[0];
+  
   return new Promise((resolve) => {
     const options = {
-      host: domain,
-      port: 443,
-      servername: domain,
+      host: hostname,
+      port: port,
+      servername: hostname,
       rejectUnauthorized: false, // We want to check even if invalid
     };
 
@@ -67,15 +70,16 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
   const url = buildUrl(domain, '/');
   const parsedUrl = new URL(url);
   const hostname = parsedUrl.hostname;
+  const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : 443;
   
   try {
     // Measure latency
     const startTime = Date.now();
-    const response = await fetchWithTimeout(url);
+    const response = await safeFetch(url);
     const latencyMs = Date.now() - startTime;
     
     // Check TLS
-    const tlsInfo = await checkTLS(hostname);
+    const tlsInfo = await checkTLS(hostname, port);
     
     // Determine status
     let status: 'pass' | 'warn' | 'fail' = 'pass';

@@ -61,13 +61,45 @@ export function isPrivateOrReservedIP(ip: string): boolean {
  * Resolves DNS first, then checks all resolved IPs
  */
 export async function validateDomain(domain: string): Promise<{ valid: boolean; reason?: string }> {
+  // Reject inputs containing URL special characters that could bypass validation
+  const invalidChars = ['#', '?', '/', '\\', ' ', '\t', '\n', '\r'];
+  for (const char of invalidChars) {
+    if (domain.includes(char)) {
+      return { valid: false, reason: `Domain contains invalid character: ${char}` };
+    }
+  }
+  
+  // Check for control characters
+  if (/[\x00-\x1F\x7F]/.test(domain)) {
+    return { valid: false, reason: 'Domain contains control characters' };
+  }
+  
   // Check if domain contains userinfo (user:pass@)
   if (domain.includes('@')) {
     return { valid: false, reason: 'Domain contains userinfo (user:pass@host)' };
   }
   
-  // Extract hostname (remove port if present)
-  const hostname = domain.split(':')[0];
+  // Parse as URL to validate structure
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(`https://${domain}`);
+  } catch (error) {
+    return { valid: false, reason: 'Invalid domain format' };
+  }
+  
+  // Verify URL components are clean (no path, query, or fragment)
+  if (parsedUrl.pathname !== '/') {
+    return { valid: false, reason: 'Domain contains path component' };
+  }
+  if (parsedUrl.search !== '') {
+    return { valid: false, reason: 'Domain contains query string' };
+  }
+  if (parsedUrl.hash !== '') {
+    return { valid: false, reason: 'Domain contains fragment' };
+  }
+  
+  // Extract hostname (handles both regular hostnames and IPv6 literals)
+  const hostname = parsedUrl.hostname;
   
   // Check if it's already an IP address
   const ipType = isIP(hostname);
@@ -97,8 +129,11 @@ export async function validateDomain(domain: string): Promise<{ valid: boolean; 
     }
     
     return { valid: true };
-  } catch (error) {
-    // DNS resolution failure - let it proceed, network error will be caught later
-    return { valid: true };
+  } catch (error: any) {
+    // DNS resolution failure - fail closed (reject)
+    return { 
+      valid: false, 
+      reason: `DNS lookup failed for ${hostname}: ${error.code || 'unknown error'}` 
+    };
   }
 }

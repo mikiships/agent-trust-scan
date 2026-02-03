@@ -1,12 +1,12 @@
 import { A2AAgentCardSchema } from '../types.js';
-import { buildUrl, fetchWithTimeout } from '../utils.js';
+import { buildUrl, safeFetch } from '../utils.js';
 import type { CheckResult } from '../types.js';
 
 export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
   const url = buildUrl(domain, '/.well-known/agent.json');
   
   try {
-    const response = await fetchWithTimeout(url);
+    const response = await safeFetch(url);
     
     if (!response.ok) {
       if (response.status === 404) {

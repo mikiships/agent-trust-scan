@@ -1,24 +1,52 @@
-import { buildUrl, fetchWithTimeout } from '../utils.js';
+import { buildUrl, safeFetch } from '../utils.js';
 import type { CheckResult } from '../types.js';
+import { URL } from 'url';
 
 interface LinkCheck {
   url: string;
   reachable: boolean;
   statusCode?: number;
+  error?: string;
 }
 
-async function checkLink(url: string): Promise<LinkCheck> {
+async function checkLink(url: string, baseUrl: string): Promise<LinkCheck> {
   try {
-    const response = await fetchWithTimeout(url, 5000);
+    // Resolve relative URLs
+    let absoluteUrl: string;
+    try {
+      absoluteUrl = new URL(url, baseUrl).toString();
+    } catch {
+      return {
+        url,
+        reachable: false,
+        error: 'Invalid URL format',
+      };
+    }
+
+    // Parse and validate the URL
+    const parsedUrl = new URL(absoluteUrl);
+
+    // Only allow http/https schemes
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return {
+        url: absoluteUrl,
+        reachable: false,
+        error: `Unsupported URL scheme: ${parsedUrl.protocol}`,
+      };
+    }
+
+    // Use safeFetch to prevent SSRF
+    const response = await safeFetch(absoluteUrl, 5000);
     return {
-      url,
+      url: absoluteUrl,
       reachable: response.ok,
       statusCode: response.status,
     };
-  } catch {
+  } catch (error) {
     return {
       url,
       reachable: false,
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -77,7 +105,7 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
   const url = buildUrl(domain, '/llms.txt');
   
   try {
-    const response = await fetchWithTimeout(url);
+    const response = await safeFetch(url);
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -120,7 +148,7 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
 
     // Check link reachability (sample up to 5 links to avoid too many requests)
     const linksToCheck = parsed.links.slice(0, 5);
-    const linkChecks = await Promise.all(linksToCheck.map(checkLink));
+    const linkChecks = await Promise.all(linksToCheck.map(link => checkLink(link, url)));
     const brokenLinks = linkChecks.filter(check => !check.reachable);
 
     return {

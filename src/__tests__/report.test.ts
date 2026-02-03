@@ -27,17 +27,22 @@ describe('Report Formatters', () => {
         details: {
           exists: true,
           url: 'https://example.com/llms.txt',
-          linksCount: 3,
+          formatValid: true,
+          linkCount: 3,
+          linksChecked: 3,
           brokenLinks: [],
+          message: 'All links reachable',
         },
       },
       health: {
         status: 'pass',
         details: {
-          reachable: true,
-          responseTime: 150,
+          url: 'https://example.com/',
+          statusCode: 200,
+          latencyMs: 150,
           tlsValid: true,
-          certExpiry: '2025-12-31',
+          tlsExpiryDays: 365,
+          message: 'All health checks passed',
         },
       },
       mcp: {

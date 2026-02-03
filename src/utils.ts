@@ -8,6 +8,7 @@ export async function fetchWithTimeout(
   try {
     const response = await fetch(url, {
       signal: controller.signal,
+      redirect: 'manual', // Prevent automatic redirect following to avoid SSRF
       headers: {
         'User-Agent': 'agent-trust-scan/0.1.0',
       },
@@ -18,6 +19,74 @@ export async function fetchWithTimeout(
     clearTimeout(timeout);
     throw error;
   }
+}
+
+/**
+ * Safe fetch wrapper that validates redirect targets against private/reserved IPs
+ * Follows redirects manually after validating each Location header
+ */
+export async function safeFetch(
+  url: string,
+  timeoutMs: number = 10000,
+  maxRedirects: number = 5
+): Promise<Response> {
+  const { isPrivateOrReservedIP } = await import('./security.js');
+  const { URL } = await import('url');
+  const { lookup } = await import('dns/promises');
+  
+  let currentUrl = url;
+  let redirectCount = 0;
+
+  while (redirectCount <= maxRedirects) {
+    // Validate the URL before fetching
+    const parsedUrl = new URL(currentUrl);
+    
+    // Only allow http/https schemes
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error(`Unsafe URL scheme: ${parsedUrl.protocol}`);
+    }
+    
+    // Check if hostname resolves to private IP
+    const hostname = parsedUrl.hostname;
+    try {
+      const addresses = await lookup(hostname, { all: true });
+      for (const { address } of addresses) {
+        if (isPrivateOrReservedIP(address)) {
+          throw new Error(`URL resolves to private/reserved IP: ${address}`);
+        }
+      }
+    } catch (error: any) {
+      // If DNS lookup fails, throw error (fail closed)
+      if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+        throw new Error(`DNS lookup failed for ${hostname}`);
+      }
+      throw error;
+    }
+
+    // Fetch with manual redirect handling
+    const response = await fetchWithTimeout(currentUrl, timeoutMs);
+
+    // Check if it's a redirect
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('Location');
+      if (!location) {
+        throw new Error('Redirect response missing Location header');
+      }
+
+      redirectCount++;
+      if (redirectCount > maxRedirects) {
+        throw new Error(`Too many redirects (max: ${maxRedirects})`);
+      }
+
+      // Resolve relative redirects
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error('Unexpected redirect loop');
 }
 
 export function normalizeUrl(domain: string): string {

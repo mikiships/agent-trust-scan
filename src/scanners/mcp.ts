@@ -1,5 +1,5 @@
 import { MCPServerSchema } from '../types.js';
-import { buildUrl, fetchWithTimeout } from '../utils.js';
+import { buildUrl, safeFetch } from '../utils.js';
 import type { CheckResult } from '../types.js';
 
 export async function scanMCP(domain: string): Promise<CheckResult> {
@@ -12,7 +12,7 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
     const url = buildUrl(domain, path);
     
     try {
-      const response = await fetchWithTimeout(url);
+      const response = await safeFetch(url);
       
       if (!response.ok) {
         continue; // Try next path

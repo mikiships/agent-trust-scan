@@ -31,7 +31,7 @@ program
       let domains: string[] = [];
       
       if (domain) {
-        domains.push(domain);
+        domains.push(domain.trim());
       } else if (options.domains) {
         const content = await readFile(options.domains, 'utf-8');
         domains = content
@@ -64,14 +64,57 @@ program
         
         const batchResults = await Promise.all(
           batch.map(async (d) => {
-            if (options.verbose) {
-              console.error(`Starting scan: ${d}`);
+            try {
+              if (options.verbose) {
+                console.error(`Starting scan: ${d}`);
+              }
+              const report = await scanDomain(d);
+              if (options.verbose) {
+                console.error(`Completed scan: ${d} (score: ${report.score})`);
+              }
+              return report;
+            } catch (error) {
+              if (options.verbose) {
+                console.error(`Failed scan: ${d} - ${error instanceof Error ? error.message : String(error)}`);
+              }
+              // Return a failed report instead of throwing
+              return {
+                domain: d,
+                timestamp: new Date().toISOString(),
+                score: 0,
+                summary: 'Scan failed',
+                checks: {
+                  a2a_agent_card: {
+                    status: 'fail' as const,
+                    details: {
+                      error: error instanceof Error ? error.message : String(error),
+                      message: 'Scan failed',
+                    },
+                  },
+                  llms_txt: {
+                    status: 'fail' as const,
+                    details: {
+                      error: 'Scan failed',
+                      message: 'Scan failed',
+                    },
+                  },
+                  health: {
+                    status: 'fail' as const,
+                    details: {
+                      error: 'Scan failed',
+                      message: 'Scan failed',
+                    },
+                  },
+                  mcp: {
+                    status: 'fail' as const,
+                    details: {
+                      error: 'Scan failed',
+                      message: 'Scan failed',
+                    },
+                  },
+                },
+              } as ScanReport;
             }
-            const report = await scanDomain(d);
-            if (options.verbose) {
-              console.error(`Completed scan: ${d} (score: ${report.score})`);
-            }
-            return report;
           })
         );
         
