@@ -2,6 +2,8 @@ import { buildUrl, safeFetch } from '../utils.js';
 import type { CheckResult } from '../types.js';
 import * as tls from 'tls';
 import { URL } from 'url';
+import { lookup } from 'dns/promises';
+import { isPrivateOrReservedIP } from '../security.js';
 
 interface TLSInfo {
   valid: boolean;
@@ -11,8 +13,33 @@ interface TLSInfo {
 }
 
 async function checkTLS(domain: string, port: number = 443): Promise<TLSInfo> {
-  // For TLS check, use the hostname without port for servername
-  const hostname = domain.split(':')[0];
+  // Strip brackets from IPv6 literals if present (e.g., [2001:db8::1] -> 2001:db8::1)
+  const hostname = domain.replace(/^\[|\]$/g, '');
+  
+  // Validate DNS before connecting (same protection as safeFetch)
+  try {
+    const addresses = await lookup(hostname, { all: true });
+    for (const { address } of addresses) {
+      if (isPrivateOrReservedIP(address)) {
+        return {
+          valid: false,
+          error: `TLS target resolves to private/reserved IP: ${address}`,
+        };
+      }
+    }
+  } catch (error: any) {
+    // DNS lookup failure
+    if (error.code === 'ENOTFOUND' || error.code === 'EAI_AGAIN') {
+      return {
+        valid: false,
+        error: `DNS lookup failed for ${hostname}`,
+      };
+    }
+    return {
+      valid: false,
+      error: error.message || 'DNS validation error',
+    };
+  }
   
   return new Promise((resolve) => {
     const options = {
@@ -77,6 +104,9 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
     const startTime = Date.now();
     const response = await safeFetch(url);
     const latencyMs = Date.now() - startTime;
+    
+    // Cancel response body - we only need status code
+    response.body?.cancel();
     
     // Check TLS
     const tlsInfo = await checkTLS(hostname, port);

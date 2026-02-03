@@ -160,14 +160,21 @@ export async function safeFetch(
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('Location');
       if (!location) {
+        // Cancel body before throwing - we only needed headers
+        response.body?.cancel();
         throw new Error('Redirect response missing Location header');
       }
 
       redirectCount++;
       if (redirectCount > maxRedirects) {
+        // Cancel body before throwing - we only needed headers
+        response.body?.cancel();
         throw new Error(`Too many redirects (max: ${maxRedirects})`);
       }
 
+      // Cancel body - we only needed the Location header
+      response.body?.cancel();
+      
       // Resolve relative redirects
       currentUrl = new URL(location, currentUrl).toString();
       continue;

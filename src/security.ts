@@ -1,59 +1,73 @@
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
+import ipaddr from 'ipaddr.js';
+
+/**
+ * Check if an IPv4 address is in a private or reserved range
+ */
+function isPrivateOrReservedIPv4(ip: string): boolean {
+  try {
+    const addr = ipaddr.parse(ip);
+    if (addr.kind() !== 'ipv4') return false;
+    
+    const range = (addr as ipaddr.IPv4).range();
+    
+    // Only block actual private/reserved ranges
+    // ipaddr.js returns 'unicast' for public IPs - those are safe
+    return (
+      range === 'private' ||
+      range === 'loopback' ||
+      range === 'linkLocal' ||
+      range === 'broadcast' ||
+      range === 'unspecified' ||
+      range === 'reserved' ||
+      range === 'multicast'
+    );
+  } catch {
+    // If parsing fails, fail safe by rejecting
+    return true;
+  }
+}
 
 /**
  * Check if an IP address is in a private or reserved range
+ * Properly handles IPv4-mapped IPv6 addresses in all formats
  */
 export function isPrivateOrReservedIP(ip: string): boolean {
-  const ipType = isIP(ip);
-  
-  if (ipType === 4) {
-    // IPv4 private/reserved ranges
-    const parts = ip.split('.').map(Number);
+  try {
+    const addr = ipaddr.parse(ip);
     
-    // 10.0.0.0/8
-    if (parts[0] === 10) return true;
-    
-    // 172.16.0.0/12
-    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
-    
-    // 192.168.0.0/16
-    if (parts[0] === 192 && parts[1] === 168) return true;
-    
-    // 127.0.0.0/8 (loopback)
-    if (parts[0] === 127) return true;
-    
-    // 169.254.0.0/16 (link-local)
-    if (parts[0] === 169 && parts[1] === 254) return true;
-    
-    // 0.0.0.0/8
-    if (parts[0] === 0) return true;
-    
-    // 255.255.255.255/32 (broadcast)
-    if (parts[0] === 255 && parts[1] === 255 && parts[2] === 255 && parts[3] === 255) return true;
-    
-    return false;
-  } else if (ipType === 6) {
-    // IPv6 private/reserved ranges
-    const lower = ip.toLowerCase();
-    
-    // ::1 (loopback)
-    if (lower === '::1' || lower === '0:0:0:0:0:0:0:1') return true;
-    
-    // fc00::/7 (unique local)
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
-    
-    // fe80::/10 (link-local)
-    if (lower.startsWith('fe8') || lower.startsWith('fe9') || 
-        lower.startsWith('fea') || lower.startsWith('feb')) return true;
-    
-    // ::ffff:0:0/96 (IPv4-mapped IPv6)
-    if (lower.includes('::ffff:')) return true;
+    if (addr.kind() === 'ipv4') {
+      return isPrivateOrReservedIPv4(ip);
+    } else if (addr.kind() === 'ipv6') {
+      const ipv6Addr = addr as ipaddr.IPv6;
+      
+      // Check if it's an IPv4-mapped IPv6 address (::ffff:x.x.x.x)
+      // This catches all forms: compressed, expanded, etc.
+      if (ipv6Addr.isIPv4MappedAddress()) {
+        // Convert to IPv4 and check private ranges
+        const ipv4 = ipv6Addr.toIPv4Address().toString();
+        return isPrivateOrReservedIPv4(ipv4);
+      }
+      
+      // Check IPv6 special-use ranges
+      const range = ipv6Addr.range();
+      // ipaddr.js returns 'unicast' for public IPv6 - those are safe
+      return (
+        range === 'loopback' ||          // ::1/128
+        range === 'linkLocal' ||         // fe80::/10
+        range === 'uniqueLocal' ||       // fc00::/7
+        range === 'unspecified' ||       // ::/128
+        range === 'multicast' ||         // ff00::/8
+        range === 'reserved'             // Other reserved ranges
+      );
+    }
     
     return false;
+  } catch {
+    // If parsing fails, fail safe by rejecting
+    return true;
   }
-  
-  return false;
 }
 
 /**

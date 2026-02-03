@@ -125,4 +125,23 @@ describe('Domain Scanner', () => {
   it('should reject localhost', async () => {
     await expect(scanDomain('localhost')).rejects.toThrow('Invalid domain');
   });
+
+  it('should produce a report with fail status that would gate CI (regression test for blocker #3)', async () => {
+    // Mock a failing scan (e.g., all checks fail)
+    mockFetch
+      .mockRejectedValueOnce(new Error('Connection refused'))
+      .mockRejectedValueOnce(new Error('Connection refused'))
+      .mockRejectedValueOnce(new Error('Connection refused'))
+      .mockRejectedValueOnce(new Error('Connection refused'));
+
+    const result = await scanDomain('example.com');
+    
+    // Verify that at least one check failed
+    const failedChecks = Object.values(result.checks).filter(c => c.status === 'fail');
+    expect(failedChecks.length).toBeGreaterThan(0);
+    
+    // The CLI should exit with code 1 when there are failures (see cli.ts line ~140)
+    // This ensures action.yml (without continue-on-error) will properly gate CI
+    expect(result.score).toBeLessThan(100);
+  });
 });

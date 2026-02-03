@@ -64,8 +64,22 @@ describe('Security', () => {
         expect(isPrivateOrReservedIP('fe9a::1')).toBe(true);
       });
 
-      it('should detect IPv4-mapped IPv6', () => {
+      it('should detect IPv4-mapped IPv6 in compressed form', () => {
         expect(isPrivateOrReservedIP('::ffff:192.168.1.1')).toBe(true);
+        expect(isPrivateOrReservedIP('::ffff:127.0.0.1')).toBe(true);
+        expect(isPrivateOrReservedIP('::ffff:169.254.169.254')).toBe(true);
+      });
+
+      it('should detect IPv4-mapped IPv6 in expanded forms (regression test for blocker #1)', () => {
+        // Expanded form: 0:0:0:0:0:ffff:7f00:1 is ::ffff:127.0.0.1
+        expect(isPrivateOrReservedIP('0:0:0:0:0:ffff:7f00:1')).toBe(true);
+        // Fully expanded with leading zeros
+        expect(isPrivateOrReservedIP('0000:0000:0000:0000:0000:ffff:7f00:0001')).toBe(true);
+        // Link-local in IPv4-mapped form: ::ffff:169.254.169.254
+        expect(isPrivateOrReservedIP('0:0:0:0:0:ffff:a9fe:a9fe')).toBe(true);
+        expect(isPrivateOrReservedIP('0000:0000:0000:0000:0000:ffff:a9fe:a9fe')).toBe(true);
+        // Private range in IPv4-mapped form: ::ffff:192.168.1.1
+        expect(isPrivateOrReservedIP('0:0:0:0:0:ffff:c0a8:101')).toBe(true);
       });
 
       it('should allow public IPv6', () => {
