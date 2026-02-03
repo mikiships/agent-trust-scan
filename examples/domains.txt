@@ -1,0 +1,4 @@
+# Example domains to scan
+google.com
+github.com
+anthropic.com
