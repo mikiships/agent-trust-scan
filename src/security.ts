@@ -3,6 +3,22 @@ import { isIP } from 'net';
 import ipaddr from 'ipaddr.js';
 
 /**
+ * KNOWN LIMITATION: DNS TOCTOU (Time-of-Check-to-Time-of-Use)
+ *
+ * The check-then-connect pattern used in safeFetch() and checkTLS() has an
+ * inherent TOCTOU gap: DNS is resolved here for validation, but the actual
+ * HTTP connection resolves DNS again independently. A malicious DNS server
+ * could return a safe IP during our check and a private/reserved IP during
+ * the real connection (DNS rebinding attack).
+ *
+ * A proper fix would require custom DNS resolution pinning — e.g., using
+ * Node's `http.Agent` with a custom `lookup` function that resolves DNS
+ * once, validates the result, and pins that IP for the actual connection.
+ * This is complex to implement correctly across HTTP/HTTPS and is deferred
+ * to a future version.
+ */
+
+/**
  * Check if an IPv4 address is in a private or reserved range
  */
 function isPrivateOrReservedIPv4(ip: string): boolean {
@@ -21,7 +37,8 @@ function isPrivateOrReservedIPv4(ip: string): boolean {
       range === 'broadcast' ||
       range === 'unspecified' ||
       range === 'reserved' ||
-      range === 'multicast'
+      range === 'multicast' ||
+      range === 'carrierGradeNat'  // RFC6598 100.64.0.0/10 - shared address space, not public
     );
   } catch {
     // If parsing fails, fail safe by rejecting

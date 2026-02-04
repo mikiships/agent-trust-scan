@@ -49,7 +49,7 @@ runs:
       shell: bash
       run: |
         # Use the local checkout instead of installing from npm
-        cd $GITHUB_ACTION_PATH
+        cd "$GITHUB_ACTION_PATH"
         npm ci
         npm run build
     
@@ -63,30 +63,31 @@ runs:
         POST_COMMENT: ${{ inputs.post-comment }}
       run: |
         # Use local build instead of global install
-        SCAN_BIN="node $GITHUB_ACTION_PATH/dist/cli.js"
+        SCAN_BIN="node"
+        SCAN_SCRIPT="$GITHUB_ACTION_PATH/dist/cli.js"
         
         # Determine if domains is a file or comma-separated list
         if [ -f "$DOMAINS" ]; then
-          DOMAINS_ARG="--domains $DOMAINS"
+          DOMAINS_FILE="$DOMAINS"
         else
           # Convert comma-separated to newline-separated
-          DOMAINS_FILE=$(mktemp)
+          DOMAINS_FILE="$(mktemp)"
           echo "$DOMAINS" | tr ',' '\n' > "$DOMAINS_FILE"
-          DOMAINS_ARG="--domains $DOMAINS_FILE"
         fi
         
         # Run scan with user's requested format for console output
         echo "Running scan with format: $FORMAT"
         set +e
-        $SCAN_BIN $DOMAINS_ARG --format "$FORMAT"
+        "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format "$FORMAT"
         SCAN_EXIT_CODE=$?
         set -e
         
         # Also capture JSON for machine parsing
-        $SCAN_BIN $DOMAINS_ARG --format json > scan-report.json
+        "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format json > scan-report.json
         
         # Parse JSON using Node.js (no jq dependency)
-        cat > parse-report.js << 'PARSER_EOF'
+        # Use .cjs extension to ensure CommonJS parsing regardless of package.json "type"
+        cat > parse-report.cjs << 'PARSER_EOF'
         const fs = require('fs');
         const data = JSON.parse(fs.readFileSync('scan-report.json', 'utf8'));
         
@@ -112,34 +113,34 @@ runs:
         PARSER_EOF
         
         # Run parser and capture output
-        PARSE_OUTPUT=$(node parse-report.js)
+        PARSE_OUTPUT=$(node parse-report.cjs)
         
         # Extract values
         SCORE=$(echo "$PARSE_OUTPUT" | grep "^SCORE=" | cut -d= -f2)
         FAIL_COUNT=$(echo "$PARSE_OUTPUT" | grep "^FAIL_COUNT=" | cut -d= -f2)
         WARN_COUNT=$(echo "$PARSE_OUTPUT" | grep "^WARN_COUNT=" | cut -d= -f2)
         
-        echo "score=$SCORE" >> $GITHUB_OUTPUT
+        echo "score=$SCORE" >> "$GITHUB_OUTPUT"
         
         # Save full JSON report
-        echo "report<<EOF" >> $GITHUB_OUTPUT
-        cat scan-report.json >> $GITHUB_OUTPUT
-        echo "EOF" >> $GITHUB_OUTPUT
+        echo "report<<EOF" >> "$GITHUB_OUTPUT"
+        cat scan-report.json >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
         
         # Generate markdown report for PR comments
         if [ "$POST_COMMENT" = "true" ]; then
-          $SCAN_BIN $DOMAINS_ARG --format markdown > scan-report.md
+          "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format markdown > scan-report.md
         fi
         
         # Determine pass/fail
         if [ "$FAIL_ON" = "warn" ] && [ "$WARN_COUNT" -gt 0 ]; then
-          echo "passed=false" >> $GITHUB_OUTPUT
+          echo "passed=false" >> "$GITHUB_OUTPUT"
           exit 1
         elif [ "$FAIL_COUNT" -gt 0 ]; then
-          echo "passed=false" >> $GITHUB_OUTPUT
+          echo "passed=false" >> "$GITHUB_OUTPUT"
           exit 1
         else
-          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "passed=true" >> "$GITHUB_OUTPUT"
         fi
     
     - name: Post PR comment

@@ -20,6 +20,7 @@ export async function readResponseText(response: Response): Promise<string> {
     const chunks: Uint8Array[] = [];
     let totalSize = 0;
     
+    let cancelled = false;
     try {
       while (true) {
         const { done, value } = await reader.read();
@@ -27,13 +28,19 @@ export async function readResponseText(response: Response): Promise<string> {
         
         totalSize += value.length;
         if (totalSize > MAX_RESPONSE_SIZE) {
+          // Cancel the stream to avoid leaving connections not fully drained
+          // cancel() also releases the reader lock
+          cancelled = true;
+          await reader.cancel();
           throw new Error(`Response exceeded size limit: ${totalSize} bytes (max: ${MAX_RESPONSE_SIZE})`);
         }
         
         chunks.push(value);
       }
     } finally {
-      reader.releaseLock();
+      if (!cancelled) {
+        reader.releaseLock();
+      }
     }
     
     // Combine chunks and decode

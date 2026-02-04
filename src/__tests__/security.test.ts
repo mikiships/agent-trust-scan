@@ -41,6 +41,14 @@ describe('Security', () => {
         expect(isPrivateOrReservedIP('255.255.255.255')).toBe(true);
       });
 
+      it('should detect carrier-grade NAT (100.64.0.0/10, RFC6598)', () => {
+        expect(isPrivateOrReservedIP('100.64.0.1')).toBe(true);
+        expect(isPrivateOrReservedIP('100.100.100.100')).toBe(true);
+        expect(isPrivateOrReservedIP('100.127.255.255')).toBe(true);
+        // 100.128.0.0 is outside the /10 block
+        expect(isPrivateOrReservedIP('100.128.0.1')).toBe(false);
+      });
+
       it('should allow public IPs', () => {
         expect(isPrivateOrReservedIP('8.8.8.8')).toBe(false);
         expect(isPrivateOrReservedIP('1.1.1.1')).toBe(false);
