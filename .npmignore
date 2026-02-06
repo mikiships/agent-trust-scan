@@ -12,8 +12,14 @@ jest.config.js
 .vscode/
 .idea/
 
-# Documentation (keep README, LICENSE)
+# Coverage
+coverage/
+
+# Documentation (keep README, LICENSE, but not internal docs)
 docs/
+IMPLEMENTATION.md
+ORACLE-FIXES.md
+CONTRIBUTING.md
 
 # Config
 .gitignore
