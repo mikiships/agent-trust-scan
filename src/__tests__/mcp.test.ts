@@ -36,6 +36,10 @@ describe('MCP Scanner', () => {
     expect(result.details.mcpDetected).toBe(true);
     expect(result.details.schemaValid).toBe(true);
     expect(result.details.toolsCount).toBe(1);
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'fetch')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'schema_validate')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should try fallback path when first path returns 404', async () => {
@@ -118,6 +122,9 @@ describe('MCP Scanner', () => {
     expect(result.details.mcpDetected).toBe(true);
     expect(result.details.schemaValid).toBe(false);
     expect(result.details.errors).toBeDefined();
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'schema_validate')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should warn when no MCP endpoint found', async () => {
@@ -135,6 +142,9 @@ describe('MCP Scanner', () => {
 
     expect(result.status).toBe('warn');
     expect(result.details.mcpDetected).toBe(false);
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'fetch')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should handle network errors', async () => {

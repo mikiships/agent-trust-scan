@@ -2,9 +2,16 @@ import { z } from 'zod';
 
 export type CheckStatus = 'pass' | 'warn' | 'fail';
 
+export interface TraceStep {
+  step: string;        // What action was taken (e.g., "fetch", "schema_validate", "auth_check")
+  observed: string;    // What was observed
+  inference: string;   // What conclusion was drawn and why
+}
+
 export interface CheckResult {
   status: CheckStatus;
   details: Record<string, any>;
+  trace?: TraceStep[];  // Decision reasoning chain (populated when --trace is used)
 }
 
 export interface ScanReport {
@@ -18,6 +25,7 @@ export interface ScanReport {
     mcp: CheckResult;
   };
   summary: string;
+  traceEnabled?: boolean;  // Whether trace data is included
 }
 
 // A2A Agent Card schema

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { ScanReport, CheckStatus } from './types.js';
+import type { ScanReport, CheckStatus, TraceStep } from './types.js';
 
 function getStatusSymbol(status: CheckStatus): string {
   switch (status) {
@@ -21,6 +21,21 @@ function getStatusColor(status: CheckStatus): (text: string) => string {
     case 'fail':
       return chalk.red;
   }
+}
+
+function formatTraceForTable(trace: TraceStep[]): string[] {
+  const lines: string[] = [];
+  lines.push(`  ${chalk.bold('Reasoning:')}`);
+  for (const step of trace) {
+    // Use observed as the leading arrow line, and inference as the indented explanation
+    lines.push(`    → ${chalk.gray(step.observed)}`);
+    lines.push(`      ${chalk.gray(step.inference)}`);
+  }
+  return lines;
+}
+
+function escapeMarkdownCell(text: string): string {
+  return text.replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
 export function formatReportJson(report: ScanReport): string {
@@ -88,6 +103,10 @@ export function formatReportTable(report: ScanReport): string {
       lines.push(`  ${chalk.gray(`Name: ${result.details.name}`)}`);
       lines.push(`  ${chalk.gray(`Tools: ${result.details.toolsCount}`)}`);
     }
+
+    if (result.trace && result.trace.length > 0) {
+      lines.push(...formatTraceForTable(result.trace));
+    }
     
     lines.push('');
   }
@@ -107,6 +126,9 @@ export function formatReportMarkdown(report: ScanReport): string {
   lines.push(`**Domain:** ${report.domain}`);
   lines.push(`**Timestamp:** ${report.timestamp}`);
   lines.push(`**Score:** ${report.score}/100`);
+  if (report.traceEnabled) {
+    lines.push(`**Trace Enabled:** true`);
+  }
   lines.push('');
   lines.push(`## Checks`);
   lines.push('');
@@ -127,6 +149,17 @@ export function formatReportMarkdown(report: ScanReport): string {
     
     if (result.details.message) {
       lines.push(result.details.message);
+      lines.push('');
+    }
+
+    if (result.trace && result.trace.length > 0) {
+      lines.push('#### Decision Trace');
+      lines.push('');
+      lines.push('| Step | Observed | Inference |');
+      lines.push('|------|----------|-----------|');
+      for (const step of result.trace) {
+        lines.push(`| ${escapeMarkdownCell(step.step)} | ${escapeMarkdownCell(step.observed)} | ${escapeMarkdownCell(step.inference)} |`);
+      }
       lines.push('');
     }
     

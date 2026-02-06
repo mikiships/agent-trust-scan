@@ -18,7 +18,9 @@ program
   .option('-d, --domains <file>', 'File containing list of domains (one per line)')
   .option('-f, --format <format>', 'Output format: table|json|markdown', 'table')
   .option('-j, --json', 'Output JSON format (shorthand for --format json)')
+  .option('-t, --trace', 'Include decision trace (reasoning chain) in output')
   .option('-v, --verbose', 'Show detailed progress and URLs being fetched')
+  .option('-t, --trace', 'Include decision trace (reasoning chain) in output')
   .action(async (domain: string | undefined, options: any) => {
     try {
       const format = options.json ? 'json' : options.format;
@@ -68,7 +70,7 @@ program
               if (options.verbose) {
                 console.error(`Starting scan: ${d}`);
               }
-              const report = await scanDomain(d);
+              const report = await scanDomain(d, { trace: options.trace });
               if (options.verbose) {
                 console.error(`Completed scan: ${d} (score: ${report.score})`);
               }
@@ -83,6 +85,7 @@ program
                 timestamp: new Date().toISOString(),
                 score: 0,
                 summary: 'Scan failed',
+                ...(options.trace ? { traceEnabled: true } : {}),
                 checks: {
                   a2a_agent_card: {
                     status: 'fail' as const,

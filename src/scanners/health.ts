@@ -1,5 +1,5 @@
 import { buildUrl, safeFetch } from '../utils.js';
-import type { CheckResult } from '../types.js';
+import type { CheckResult, TraceStep } from '../types.js';
 import * as tls from 'tls';
 import { URL } from 'url';
 import { lookup } from 'dns/promises';
@@ -98,6 +98,7 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
   const parsedUrl = new URL(url);
   const hostname = parsedUrl.hostname;
   const port = parsedUrl.port ? parseInt(parsedUrl.port, 10) : 443;
+  const trace: TraceStep[] = [];
   
   try {
     // Measure latency
@@ -108,8 +109,36 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
     // Cancel response body - we only need status code
     response.body?.cancel();
     
+    trace.push({
+      step: 'fetch',
+      observed: `GET ${parsedUrl.pathname} -> ${response.status} ${response.ok ? 'OK' : response.statusText} in ${latencyMs}ms`,
+      inference: response.ok
+        ? `Server is responsive${latencyMs <= 1000 ? ' with acceptable latency' : ` but latency is ${latencyMs > 3000 ? 'high' : 'elevated'}`}`
+        : `Server responded with an error status`,
+    });
+    
     // Check TLS
     const tlsInfo = await checkTLS(hostname, port);
+    
+    if (tlsInfo.valid) {
+      const expiryNote = tlsInfo.expiryDays !== undefined
+        ? `, expires in ${tlsInfo.expiryDays} days`
+        : '';
+      const issuerNote = tlsInfo.issuer ? `, issuer: ${tlsInfo.issuer}` : '';
+      trace.push({
+        step: 'tls_check',
+        observed: `Valid certificate${expiryNote}${issuerNote}`,
+        inference: tlsInfo.expiryDays !== undefined && tlsInfo.expiryDays < 30
+          ? `TLS certificate is valid but expiring soon (${tlsInfo.expiryDays} days) — renewal needed`
+          : 'TLS properly configured with sufficient validity period',
+      });
+    } else {
+      trace.push({
+        step: 'tls_check',
+        observed: `TLS check failed: ${tlsInfo.error || 'Certificate validation failed'}`,
+        inference: 'Invalid or missing TLS certificate compromises transport security — data in transit is not protected',
+      });
+    }
     
     // Determine status
     let status: 'pass' | 'warn' | 'fail' = 'pass';
@@ -133,6 +162,32 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
       warnings.push(`High latency: ${latencyMs}ms`);
     }
     
+    // Build verdict
+    const verdictObserved: string[] = [];
+    verdictObserved.push(`HTTP ${response.status}`);
+    verdictObserved.push(`TLS ${tlsInfo.valid ? 'valid' : 'invalid'}`);
+    verdictObserved.push(`latency ${latencyMs}ms`);
+
+    if (status === 'pass') {
+      trace.push({
+        step: 'verdict',
+        observed: verdictObserved.join(', '),
+        inference: 'All health indicators normal — server is operational and secure',
+      });
+    } else if (status === 'warn') {
+      trace.push({
+        step: 'verdict',
+        observed: verdictObserved.join(', '),
+        inference: `Health check passed with warnings: ${warnings.join('; ')}`,
+      });
+    } else {
+      trace.push({
+        step: 'verdict',
+        observed: verdictObserved.join(', '),
+        inference: `Critical health issue detected: ${warnings.join('; ')}`,
+      });
+    }
+
     return {
       status,
       details: {
@@ -145,8 +200,19 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
         warnings: warnings.length > 0 ? warnings : undefined,
         message: warnings.length > 0 ? warnings.join('; ') : 'All health checks passed',
       },
+      trace,
     };
   } catch (error) {
+    trace.push({
+      step: 'fetch',
+      observed: `GET ${parsedUrl.pathname} -> Error: ${error instanceof Error ? error.message : String(error)}`,
+      inference: 'Unable to reach the server — endpoint may be down or unreachable',
+    });
+    trace.push({
+      step: 'verdict',
+      observed: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
+      inference: 'Server is unreachable, which is a critical health failure — no further checks possible',
+    });
     return {
       status: 'fail',
       details: {
@@ -154,6 +220,7 @@ export async function scanHealth(domain: string): Promise<CheckResult> {
         error: error instanceof Error ? error.message : String(error),
         message: 'Health check failed',
       },
+      trace,
     };
   }
 }

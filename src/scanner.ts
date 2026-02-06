@@ -4,9 +4,18 @@ import { scanHealth } from './scanners/health.js';
 import { scanMCP } from './scanners/mcp.js';
 import { calculateScore, normalizeUrl } from './utils.js';
 import { validateDomain } from './security.js';
-import type { ScanReport } from './types.js';
+import type { ScanReport, CheckResult } from './types.js';
 
-export async function scanDomain(domain: string): Promise<ScanReport> {
+export interface ScanOptions {
+  trace?: boolean;
+}
+
+function stripTrace(result: CheckResult): CheckResult {
+  const { trace, ...rest } = result;
+  return rest;
+}
+
+export async function scanDomain(domain: string, options?: ScanOptions): Promise<ScanReport> {
   const normalized = normalizeUrl(domain);
   
   // Validate domain is not private/reserved IP
@@ -23,11 +32,13 @@ export async function scanDomain(domain: string): Promise<ScanReport> {
     scanMCP(normalized),
   ]);
 
+  const includeTrace = options?.trace === true;
+
   const checks = {
-    a2a_agent_card: a2aResult,
-    llms_txt: llmsTxtResult,
-    health: healthResult,
-    mcp: mcpResult,
+    a2a_agent_card: includeTrace ? a2aResult : stripTrace(a2aResult),
+    llms_txt: includeTrace ? llmsTxtResult : stripTrace(llmsTxtResult),
+    health: includeTrace ? healthResult : stripTrace(healthResult),
+    mcp: includeTrace ? mcpResult : stripTrace(mcpResult),
   };
 
   const score = calculateScore(checks);
@@ -62,5 +73,6 @@ export async function scanDomain(domain: string): Promise<ScanReport> {
     score,
     checks,
     summary: summaryParts.join('. '),
+    ...(includeTrace ? { traceEnabled: true } : {}),
   };
 }

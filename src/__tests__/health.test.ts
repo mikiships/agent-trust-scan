@@ -30,6 +30,9 @@ describe('Health Scanner', () => {
     expect(result.details.statusCode).toBe(200);
     expect(result.details.latencyMs).toBeDefined();
     expect(result.details.tlsValid).toBeDefined();
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'fetch')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should fail for unreachable domain', async () => {
@@ -41,6 +44,9 @@ describe('Health Scanner', () => {
     expect(result.details.error).toBeDefined();
     // safeFetch now validates DNS before fetching, so error message changes
     expect(result.details.error).toContain('DNS lookup failed');
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'fetch')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should handle timeout errors', async () => {

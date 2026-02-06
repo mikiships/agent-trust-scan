@@ -1,5 +1,5 @@
 import { buildUrl, safeFetch, readResponseText } from '../utils.js';
-import type { CheckResult } from '../types.js';
+import type { CheckResult, TraceStep } from '../types.js';
 import { URL } from 'url';
 
 interface LinkCheck {
@@ -107,6 +107,7 @@ function parseLlmsTxt(content: string): { valid: boolean; links: string[]; error
 
 export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
   const url = buildUrl(domain, '/llms.txt');
+  const trace: TraceStep[] = [];
   
   try {
     const response = await safeFetch(url);
@@ -115,6 +116,16 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
       if (response.status === 404) {
         // Cancel body to avoid leaving connection open
         response.body?.cancel();
+        trace.push({
+          step: 'fetch',
+          observed: `GET /llms.txt -> ${response.status} Not Found`,
+          inference: 'No llms.txt file deployed at standard location',
+        });
+        trace.push({
+          step: 'verdict',
+          observed: 'File not found',
+          inference: 'llms.txt absence means the endpoint hasn\'t adopted the llms.txt convention for AI-readable documentation',
+        });
         return {
           status: 'warn',
           details: {
@@ -122,11 +133,22 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
             url,
             message: 'llms.txt not found',
           },
+          trace,
         };
       }
       
       // Cancel body to avoid leaving connection open
       response.body?.cancel();
+      trace.push({
+        step: 'fetch',
+        observed: `GET /llms.txt -> ${response.status} ${response.statusText}`,
+        inference: 'Server returned an error when requesting llms.txt',
+      });
+      trace.push({
+        step: 'verdict',
+        observed: `HTTP ${response.status} error`,
+        inference: 'Non-404 error suggests a server-side issue rather than simple absence of the file',
+      });
       return {
         status: 'fail',
         details: {
@@ -135,13 +157,30 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
           statusCode: response.status,
           message: `HTTP ${response.status} ${response.statusText}`,
         },
+        trace,
       };
     }
+
+    trace.push({
+      step: 'fetch',
+      observed: `GET /llms.txt -> 200 OK`,
+      inference: 'llms.txt file exists and is accessible',
+    });
 
     const content = await readResponseText(response);
     const parsed = parseLlmsTxt(content);
     
     if (!parsed.valid) {
+      trace.push({
+        step: 'format_validate',
+        observed: `Validation errors: ${parsed.errors.join('; ')}`,
+        inference: 'File does not follow llms.txt specification format — cannot be reliably consumed by AI agents',
+      });
+      trace.push({
+        step: 'verdict',
+        observed: `${parsed.errors.length} format error(s)`,
+        inference: 'Invalid format reduces the file\'s utility for AI-assisted navigation and documentation discovery',
+      });
       return {
         status: 'fail',
         details: {
@@ -151,16 +190,50 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
           errors: parsed.errors,
           message: 'Invalid llms.txt format',
         },
+        trace,
       };
     }
+
+    trace.push({
+      step: 'format_validate',
+      observed: `Title line present, ${parsed.links.length} markdown link(s) found`,
+      inference: 'File follows llms.txt specification format',
+    });
 
     // Check link reachability (sample up to 5 links to avoid too many requests)
     const linksToCheck = parsed.links.slice(0, 5);
     const linkChecks = await Promise.all(linksToCheck.map(link => checkLink(link, url)));
     const brokenLinks = linkChecks.filter(check => !check.reachable);
+    const reachableLinks = linkChecks.filter(check => check.reachable);
+
+    if (linksToCheck.length > 0) {
+      trace.push({
+        step: 'link_check',
+        observed: `${reachableLinks.length}/${linksToCheck.length} sampled links reachable${brokenLinks.length > 0 ? `, broken: ${brokenLinks.map(l => l.url).join(', ')}` : ''}`,
+        inference: brokenLinks.length === 0
+          ? 'Documentation links are maintained and accessible'
+          : `${brokenLinks.length} broken link(s) found — documentation may be stale or URLs have changed`,
+      });
+    } else {
+      trace.push({
+        step: 'link_check',
+        observed: 'No links found to verify',
+        inference: 'File has valid format but contains no links — limited utility for documentation discovery',
+      });
+    }
+
+    const status = brokenLinks.length === 0 ? 'pass' : 'warn';
+
+    trace.push({
+      step: 'verdict',
+      observed: `Valid format, ${parsed.links.length} total link(s), ${brokenLinks.length} broken`,
+      inference: status === 'pass'
+        ? 'Well-maintained llms.txt with active documentation'
+        : `Valid llms.txt but ${brokenLinks.length} broken link(s) suggest incomplete maintenance`,
+    });
 
     return {
-      status: brokenLinks.length === 0 ? 'pass' : 'warn',
+      status,
       details: {
         exists: true,
         url,
@@ -172,8 +245,19 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
           ? `${brokenLinks.length} broken link(s) found`
           : 'All links reachable',
       },
+      trace,
     };
   } catch (error) {
+    trace.push({
+      step: 'fetch',
+      observed: `GET /llms.txt -> Error: ${error instanceof Error ? error.message : String(error)}`,
+      inference: 'Unable to reach the llms.txt endpoint',
+    });
+    trace.push({
+      step: 'verdict',
+      observed: `Connection failed: ${error instanceof Error ? error.message : String(error)}`,
+      inference: 'Cannot assess llms.txt without reaching the server — network issue or server is down',
+    });
     return {
       status: 'fail',
       details: {
@@ -182,6 +266,7 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
         error: error instanceof Error ? error.message : String(error),
         message: 'Failed to fetch llms.txt',
       },
+      trace,
     };
   }
 }

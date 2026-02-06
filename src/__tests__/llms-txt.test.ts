@@ -20,6 +20,9 @@ describe('llms.txt Scanner', () => {
     const result = await scanLlmsTxt('example.com');
     expect(result.status).toBe('warn');
     expect(result.details.exists).toBe(false);
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'fetch')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should return pass status for valid llms.txt', async () => {
@@ -38,6 +41,10 @@ describe('llms.txt Scanner', () => {
     }
     expect(result.status).toBe('pass');
     expect(result.details.formatValid).toBe(true);
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'format_validate')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'link_check')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 
   it('should return fail for invalid format', async () => {
@@ -54,5 +61,8 @@ describe('llms.txt Scanner', () => {
     }
     expect(result.status).toBe('fail');
     expect(result.details.formatValid).toBe(false);
+    expect(result.trace).toBeDefined();
+    expect(result.trace?.some(s => s.step === 'format_validate')).toBe(true);
+    expect(result.trace?.some(s => s.step === 'verdict')).toBe(true);
   });
 });

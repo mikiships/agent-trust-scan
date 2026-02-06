@@ -66,6 +66,52 @@ describe('Domain Scanner', () => {
     expect(result.checks).toHaveProperty('llms_txt');
     expect(result.checks).toHaveProperty('health');
     expect(result.checks).toHaveProperty('mcp');
+
+    // Trace is stripped by default for backwards compatibility
+    expect((result.checks.a2a_agent_card as any).trace).toBeUndefined();
+  });
+
+  it('should include trace when enabled', async () => {
+    const validA2A = {
+      name: 'Test Agent',
+      url: 'https://example.com',
+      version: '1.0.0',
+      skills: [],
+    };
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: (name: string) => name === 'content-type' ? 'application/json' : null },
+        json: async () => validA2A,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/plain' },
+        text: async () => '# Test\n\nContent',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/html' },
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+    const result = await scanDomain('example.com', { trace: true });
+
+    expect(result.traceEnabled).toBe(true);
+    expect((result.checks.a2a_agent_card as any).trace).toBeDefined();
+    expect((result.checks.llms_txt as any).trace).toBeDefined();
+    expect((result.checks.mcp as any).trace).toBeDefined();
   });
 
   it('should calculate score correctly', async () => {
@@ -143,5 +189,92 @@ describe('Domain Scanner', () => {
     // The CLI should exit with code 1 when there are failures (see cli.ts line ~140)
     // This ensures action.yml (without continue-on-error) will properly gate CI
     expect(result.score).toBeLessThan(100);
+  });
+
+  it('should strip trace by default (backwards compatible output)', async () => {
+    const validA2A = {
+      name: 'Test Agent',
+      url: 'https://example.com',
+      version: '1.0.0',
+      skills: [],
+    };
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: (name: string) => name === 'content-type' ? 'application/json' : null },
+        json: async () => validA2A,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/plain' },
+        text: async () => '# Test\n\nContent',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/html' },
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+    const result = await scanDomain('example.com');
+
+    expect(result.traceEnabled).toBeUndefined();
+    expect((result.checks.a2a_agent_card as any).trace).toBeUndefined();
+    expect((result.checks.llms_txt as any).trace).toBeUndefined();
+    expect((result.checks.health as any).trace).toBeUndefined();
+    expect((result.checks.mcp as any).trace).toBeUndefined();
+  });
+
+  it('should include trace when enabled', async () => {
+    const validA2A = {
+      name: 'Test Agent',
+      url: 'https://example.com',
+      version: '1.0.0',
+      skills: [],
+    };
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: (name: string) => name === 'content-type' ? 'application/json' : null },
+        json: async () => validA2A,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/plain' },
+        text: async () => '# Test\n\nContent',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'text/html' },
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+      });
+
+    const result = await scanDomain('example.com', { trace: true });
+
+    expect(result.traceEnabled).toBe(true);
+    expect(Array.isArray((result.checks.a2a_agent_card as any).trace)).toBe(true);
+    expect((result.checks.a2a_agent_card as any).trace.length).toBeGreaterThan(0);
+    expect((result.checks.a2a_agent_card as any).trace.some((s: any) => s.step === 'verdict')).toBe(true);
   });
 });

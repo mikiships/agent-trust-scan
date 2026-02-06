@@ -21,6 +21,18 @@ describe('Report Formatters', () => {
           completeness: 80,
           authRequired: true,
         },
+        trace: [
+          {
+            step: 'fetch',
+            observed: 'GET /.well-known/agent.json -> 200 OK, application/json',
+            inference: 'Agent card endpoint exists and serves JSON',
+          },
+          {
+            step: 'verdict',
+            observed: 'All validations passed',
+            inference: 'Valid schema indicates a trustworthy endpoint',
+          },
+        ],
       },
       llms_txt: {
         status: 'pass',
@@ -114,6 +126,8 @@ describe('Report Formatters', () => {
       expect(result).toContain('Score: 75/100');
       expect(result).toContain('✓');
       expect(result).toContain('⚠');
+      expect(result).toContain('Reasoning:');
+      expect(result).toContain('→');
     });
 
     it('should include all check names', () => {
@@ -162,6 +176,36 @@ describe('Report Formatters', () => {
       const result = formatReportTable(reportWithLongMessage);
       expect(result).toBeTruthy();
     });
+
+    it('should include decision trace when present', () => {
+      const reportWithTrace: ScanReport = {
+        ...mockReport,
+        traceEnabled: true,
+        checks: {
+          ...mockReport.checks,
+          a2a_agent_card: {
+            ...mockReport.checks.a2a_agent_card,
+            trace: [
+              {
+                step: 'fetch',
+                observed: 'GET /.well-known/agent.json -> 200 OK',
+                inference: 'Agent card endpoint exists',
+              },
+              {
+                step: 'verdict',
+                observed: 'All validations passed',
+                inference: 'Trustworthy endpoint',
+              },
+            ],
+          },
+        },
+      };
+
+      const result = formatReportTable(reportWithTrace);
+      expect(result).toContain('Reasoning:');
+      expect(result).toContain('GET /.well-known/agent.json -> 200 OK');
+      expect(result).toContain('Trustworthy endpoint');
+    });
   });
 
   describe('formatReportMarkdown', () => {
@@ -171,6 +215,8 @@ describe('Report Formatters', () => {
       expect(result).toContain('# Agent Trust Scan Report');
       expect(result).toContain('**Domain:** example.com');
       expect(result).toContain('**Score:** 75/100');
+      expect(result).toContain('#### Decision Trace');
+      expect(result).toContain('| Step | Observed | Inference |');
     });
 
     it('should include collapsible details sections', () => {
@@ -208,6 +254,27 @@ describe('Report Formatters', () => {
 
       expect(result).toContain('❌');
       expect(result).toContain('Something went wrong');
+    });
+
+    it('should include decision trace section when present', () => {
+      const reportWithTrace: ScanReport = {
+        ...mockReport,
+        traceEnabled: true,
+        checks: {
+          ...mockReport.checks,
+          llms_txt: {
+            ...mockReport.checks.llms_txt,
+            trace: [
+              { step: 'fetch', observed: 'GET /llms.txt -> 200 OK', inference: 'llms.txt file exists' },
+            ],
+          },
+        },
+      };
+
+      const result = formatReportMarkdown(reportWithTrace);
+      expect(result).toContain('#### Decision Trace');
+      expect(result).toContain('| Step | Observed | Inference |');
+      expect(result).toContain('GET /llms.txt -> 200 OK');
     });
 
     it('should not include message field in details block', () => {
