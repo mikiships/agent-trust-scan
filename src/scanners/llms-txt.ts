@@ -37,6 +37,10 @@ async function checkLink(url: string, baseUrl: string): Promise<LinkCheck> {
 
     // Use safeFetch to prevent SSRF
     const response = await safeFetch(absoluteUrl, 5000);
+    
+    // Cancel body - we only need status code, not content
+    response.body?.cancel();
+    
     return {
       url: absoluteUrl,
       reachable: response.ok,
@@ -109,6 +113,8 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
     
     if (!response.ok) {
       if (response.status === 404) {
+        // Cancel body to avoid leaving connection open
+        response.body?.cancel();
         return {
           status: 'warn',
           details: {
@@ -119,6 +125,8 @@ export async function scanLlmsTxt(domain: string): Promise<CheckResult> {
         };
       }
       
+      // Cancel body to avoid leaving connection open
+      response.body?.cancel();
       return {
         status: 'fail',
         details: {

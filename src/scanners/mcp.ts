@@ -15,11 +15,15 @@ export async function scanMCP(domain: string): Promise<CheckResult> {
       const response = await safeFetch(url);
       
       if (!response.ok) {
+        // Cancel body before continuing to next path
+        response.body?.cancel();
         continue; // Try next path
       }
 
       const contentType = response.headers.get('content-type');
       if (!contentType?.includes('application/json')) {
+        // Cancel body before continuing to next path
+        response.body?.cancel();
         continue; // Try next path
       }
 

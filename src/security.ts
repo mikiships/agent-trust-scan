@@ -69,15 +69,10 @@ export function isPrivateOrReservedIP(ip: string): boolean {
       
       // Check IPv6 special-use ranges
       const range = ipv6Addr.range();
-      // ipaddr.js returns 'unicast' for public IPv6 - those are safe
-      return (
-        range === 'loopback' ||          // ::1/128
-        range === 'linkLocal' ||         // fe80::/10
-        range === 'uniqueLocal' ||       // fc00::/7
-        range === 'unspecified' ||       // ::/128
-        range === 'multicast' ||         // ff00::/8
-        range === 'reserved'             // Other reserved ranges
-      );
+      // SECURITY: Fail closed - only allow unicast (public) IPv6 addresses
+      // Block all non-unicast ranges: loopback, linkLocal, uniqueLocal, unspecified, 
+      // multicast, reserved, and any other special-use ranges ipaddr.js may return
+      return range !== 'unicast';
     }
     
     return false;

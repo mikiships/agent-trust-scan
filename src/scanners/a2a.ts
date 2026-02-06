@@ -10,6 +10,8 @@ export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
     
     if (!response.ok) {
       if (response.status === 404) {
+        // Cancel body to avoid leaving connection open
+        response.body?.cancel();
         return {
           status: 'warn',
           details: {
@@ -20,6 +22,8 @@ export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
         };
       }
       
+      // Cancel body to avoid leaving connection open
+      response.body?.cancel();
       return {
         status: 'fail',
         details: {
@@ -36,6 +40,8 @@ export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
       // If we get HTML at this path, it's likely a SPA catch-all (not found)
       // Treat as warn (not found) rather than fail (broken)
       if (contentType?.includes('text/html')) {
+        // Cancel body to avoid leaving connection open
+        response.body?.cancel();
         return {
           status: 'warn',
           details: {
@@ -47,6 +53,8 @@ export async function scanA2AAgentCard(domain: string): Promise<CheckResult> {
       }
       
       // Other non-JSON content-types are actual failures
+      // Cancel body to avoid leaving connection open
+      response.body?.cancel();
       return {
         status: 'fail',
         details: {

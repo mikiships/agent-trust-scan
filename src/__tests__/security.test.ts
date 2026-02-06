@@ -72,6 +72,17 @@ describe('Security', () => {
         expect(isPrivateOrReservedIP('fe9a::1')).toBe(true);
       });
 
+      it('should detect :: (unspecified)', () => {
+        expect(isPrivateOrReservedIP('::')).toBe(true);
+        expect(isPrivateOrReservedIP('0:0:0:0:0:0:0:0')).toBe(true);
+      });
+
+      it('should detect ff00::/8 (multicast)', () => {
+        expect(isPrivateOrReservedIP('ff00::1')).toBe(true);
+        expect(isPrivateOrReservedIP('ff02::1')).toBe(true);
+        expect(isPrivateOrReservedIP('ffff::1')).toBe(true);
+      });
+
       it('should detect IPv4-mapped IPv6 in compressed form', () => {
         expect(isPrivateOrReservedIP('::ffff:192.168.1.1')).toBe(true);
         expect(isPrivateOrReservedIP('::ffff:127.0.0.1')).toBe(true);

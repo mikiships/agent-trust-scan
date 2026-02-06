@@ -77,13 +77,13 @@ runs:
         
         # Run scan with user's requested format for console output
         echo "Running scan with format: $FORMAT"
+        "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format "$FORMAT" || true
+        
+        # Also capture JSON for machine parsing (don't fail on scan exit code yet)
         set +e
-        "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format "$FORMAT"
+        "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format json > scan-report.json
         SCAN_EXIT_CODE=$?
         set -e
-        
-        # Also capture JSON for machine parsing
-        "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format json > scan-report.json
         
         # Parse JSON using Node.js (no jq dependency)
         # Use .cjs extension to ensure CommonJS parsing regardless of package.json "type"
@@ -127,20 +127,26 @@ runs:
         cat scan-report.json >> "$GITHUB_OUTPUT"
         echo "EOF" >> "$GITHUB_OUTPUT"
         
-        # Generate markdown report for PR comments
+        # Generate markdown report for PR comments (always run, even if scan failed)
         if [ "$POST_COMMENT" = "true" ]; then
-          "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format markdown > scan-report.md
+          "$SCAN_BIN" "$SCAN_SCRIPT" --domains "$DOMAINS_FILE" --format markdown > scan-report.md || true
         fi
         
-        # Determine pass/fail
+        # Determine pass/fail (write outputs first, THEN exit)
+        SHOULD_FAIL=0
         if [ "$FAIL_ON" = "warn" ] && [ "$WARN_COUNT" -gt 0 ]; then
           echo "passed=false" >> "$GITHUB_OUTPUT"
-          exit 1
+          SHOULD_FAIL=1
         elif [ "$FAIL_COUNT" -gt 0 ]; then
           echo "passed=false" >> "$GITHUB_OUTPUT"
-          exit 1
+          SHOULD_FAIL=1
         else
           echo "passed=true" >> "$GITHUB_OUTPUT"
+        fi
+        
+        # Exit with appropriate code AFTER all outputs are written
+        if [ "$SHOULD_FAIL" -eq 1 ]; then
+          exit 1
         fi
     
     - name: Post PR comment
